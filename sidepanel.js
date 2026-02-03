@@ -32,6 +32,10 @@ async function init() {
   reconnectBtn.addEventListener('click', handleReconnect);
   newChatBtn.addEventListener('click', handleNewChat);
 
+  document.getElementById('lighting-btn').addEventListener('click', function() {
+    document.documentElement.classList.toggle('dark');
+  });
+
   // Load tabs for autocomplete
   await loadTabs();
   setInterval(loadTabs, 10000); // Refresh tabs every 10 seconds
