@@ -34,7 +34,20 @@ async function init() {
 
   document.getElementById('lighting-btn').addEventListener('click', function() {
     document.documentElement.classList.toggle('dark');
+    
+    // Save theme preference
+    if (document.documentElement.classList.contains('dark')) {
+      localStorage.setItem('theme', 'dark');
+    } else {
+      localStorage.setItem('theme', 'light');
+    }
   });
+
+  // Load saved theme preference
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  }
 
   // Load tabs for autocomplete
   await loadTabs();
@@ -43,9 +56,9 @@ async function init() {
   // Suggestion buttons
   document.querySelectorAll('.suggestion-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      queryInput.value = btn.dataset.query;
+      queryInput.textContent = btn.dataset.query;
       queryInput.focus();
-      queryInput.selectionStart = queryInput.selectionEnd = queryInput.value.length;
+      setCursorPosition(queryInput.textContent.length);
       handleInputChange();
     });
   });
@@ -210,15 +223,15 @@ async function handleNewChat() {
   // Re-attach suggestion button listeners
   welcomeMsg.querySelectorAll('.suggestion-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      queryInput.value = btn.dataset.query;
+      queryInput.textContent = btn.dataset.query;
       queryInput.focus();
-      queryInput.selectionStart = queryInput.selectionEnd = queryInput.value.length;
+      setCursorPosition(queryInput.textContent.length);
       handleInputChange();
     });
   });
 
   // Clear input
-  queryInput.value = '';
+  queryInput.textContent = '';
   handleInputChange();
 }
 
@@ -237,11 +250,64 @@ async function loadTabs() {
 }
 
 /**
+ * Get cursor position in contenteditable div
+ */
+function getCursorPosition() {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return 0;
+  
+  const range = selection.getRangeAt(0);
+  const preCaretRange = range.cloneRange();
+  preCaretRange.selectNodeContents(queryInput);
+  preCaretRange.setEnd(range.endContainer, range.endOffset);
+  
+  return preCaretRange.toString().length;
+}
+
+/**
+ * Set cursor position in contenteditable div
+ */
+function setCursorPosition(pos) {
+  const selection = window.getSelection();
+  const range = document.createRange();
+  
+  let currentPos = 0;
+  let found = false;
+  
+  function searchNode(node) {
+    if (found) return;
+    
+    if (node.nodeType === Node.TEXT_NODE) {
+      const length = node.textContent.length;
+      if (currentPos + length >= pos) {
+        range.setStart(node, Math.min(pos - currentPos, length));
+        range.collapse(true);
+        found = true;
+        return;
+      }
+      currentPos += length;
+    } else {
+      for (let child of node.childNodes) {
+        searchNode(child);
+        if (found) return;
+      }
+    }
+  }
+  
+  searchNode(queryInput);
+  
+  if (found) {
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+}
+
+/**
  * Detect @ mention in input and show autocomplete
  */
 function detectAtMention() {
-  const text = queryInput.value;
-  const cursorPos = queryInput.selectionStart;
+  const text = queryInput.textContent;
+  const cursorPos = getCursorPosition();
 
   // Find @ symbol before cursor
   let atPos = -1;
@@ -353,51 +419,92 @@ function selectCurrentTab() {
 
   const selectedItem = items[selectedTabIndex];
   const tabTitle = selectedItem.querySelector('.tab-suggestion-title').textContent;
+  const tabUrl = selectedItem.querySelector('.tab-suggestion-url').textContent;
 
-  // Replace @ mention with @"tabname"
-  const text = queryInput.value;
+  // Get current text and cursor position
+  const text = queryInput.textContent;
+  const cursorPos = getCursorPosition();
+  
+  // Replace @ mention with tag element
   const beforeAt = text.substring(0, currentAtMentionStart);
-  const afterCursor = text.substring(queryInput.selectionStart);
-  const newText = beforeAt + `@"${tabTitle}" ` + afterCursor;
-
-  queryInput.value = newText;
-  queryInput.selectionStart = queryInput.selectionEnd = beforeAt.length + tabTitle.length + 4;
+  const afterCursor = text.substring(cursorPos);
+  
+  // Create the mention tag
+  const mentionTag = document.createElement('span');
+  mentionTag.className = 'tab-mention';
+  mentionTag.contentEditable = 'false';
+  mentionTag.textContent = tabTitle;
+  mentionTag.dataset.tabTitle = tabTitle;
+  mentionTag.dataset.tabUrl = tabUrl;
+  
+  // Clear and rebuild content
+  queryInput.textContent = '';
+  
+  if (beforeAt) {
+    queryInput.appendChild(document.createTextNode(beforeAt));
+  }
+  
+  queryInput.appendChild(mentionTag);
+  queryInput.appendChild(document.createTextNode(' ' + afterCursor));
+  
+  // Set cursor after the mention tag
+  const newCursorPos = beforeAt.length + tabTitle.length + 1;
+  setTimeout(() => {
+    setCursorPosition(newCursorPos);
+    queryInput.focus();
+  }, 0);
 
   hideAutocomplete();
-  queryInput.focus();
   handleInputChange();
 }
 
 /**
  * Parse @mentions from query text
  */
-function parseTabMentions(text) {
+function parseTabMentions() {
   const mentions = [];
-  const regex = /@"([^"]+)"/g;
-  let match;
-
-  while ((match = regex.exec(text)) !== null) {
-    const tabName = match[1];
-    const tab = allTabs.find(t => t.title === tabName);
+  const mentionElements = queryInput.querySelectorAll('.tab-mention');
+  
+  mentionElements.forEach(element => {
+    const tabTitle = element.dataset.tabTitle;
+    const tab = allTabs.find(t => t.title === tabTitle);
     if (tab) {
       mentions.push(tab);
     }
-  }
+  });
 
   return mentions;
+}
+
+/**
+ * Get plain text from contenteditable (for sending)
+ */
+function getPlainText() {
+  let text = '';
+  
+  function extractText(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent;
+    } else if (node.classList && node.classList.contains('tab-mention')) {
+      text += `@"${node.dataset.tabTitle}"`;
+    } else {
+      for (let child of node.childNodes) {
+        extractText(child);
+      }
+    }
+  }
+  
+  extractText(queryInput);
+  return text;
 }
 
 /**
  * Handle input changes
  */
 function handleInputChange() {
-  const hasText = queryInput.value.trim().length > 0;
+  const hasText = queryInput.textContent.trim().length > 0;
   const hasModel = selectedModel !== null && selectedModel !== '';
   sendBtn.disabled = !hasText || !hasModel || isLoading;
-
-  // Auto-resize textarea
-  queryInput.style.height = 'auto';
-  queryInput.style.height = queryInput.scrollHeight + 'px';
 
   // Check for @ mention
   detectAtMention();
@@ -443,14 +550,14 @@ function handleKeyDown(e) {
  * Handle send button click
  */
 async function handleSend() {
-  const query = queryInput.value.trim();
+  const query = getPlainText().trim();
   if (!query || isLoading || !selectedModel) return;
 
   // Parse tab mentions
-  const mentionedTabs = parseTabMentions(query);
+  const mentionedTabs = parseTabMentions();
 
   // Clear input
-  queryInput.value = '';
+  queryInput.textContent = '';
   handleInputChange();
 
   // Remove welcome message if present
