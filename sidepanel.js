@@ -19,6 +19,7 @@ let selectedModel = null;
 let allTabs = [];
 let selectedTabIndex = -1;
 let currentAtMentionStart = -1;
+let queryStartTime = null; // Track when query starts
 
 /**
  * Initialize the side panel
@@ -573,6 +574,9 @@ async function handleSend() {
   isLoading = true;
   const loadingEl = addLoadingMessage();
 
+  // Start timing
+  queryStartTime = Date.now();
+
   try {
     // Send query to background script
     const response = await chrome.runtime.sendMessage({
@@ -585,11 +589,14 @@ async function handleSend() {
       }
     });
 
+    // Calculate response time
+    const responseTime = ((Date.now() - queryStartTime) / 1000).toFixed(1);
+
     // Remove loading
     loadingEl.remove();
 
     if (response.success) {
-      addMessage('assistant', response.text);
+      addMessage('assistant', response.text, responseTime);
     } else {
       addErrorMessage(response.error || 'Unknown error occurred');
     }
@@ -598,6 +605,7 @@ async function handleSend() {
     addErrorMessage(error.message);
   } finally {
     isLoading = false;
+    queryStartTime = null;
     handleInputChange();
   }
 
@@ -608,7 +616,7 @@ async function handleSend() {
 /**
  * Add message to chat
  */
-function addMessage(role, text) {
+function addMessage(role, text, responseTime = null) {
   const messageEl = document.createElement('div');
   messageEl.className = `message ${role}`;
 
@@ -624,6 +632,15 @@ function addMessage(role, text) {
   textEl.textContent = text;
 
   content.appendChild(textEl);
+
+  // Add response time for assistant messages
+  if (role === 'assistant' && responseTime) {
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    timeEl.textContent = `Thought for: ${responseTime}s`;
+    content.appendChild(timeEl);
+  }
+
   messageEl.appendChild(avatar);
   messageEl.appendChild(content);
 
@@ -631,7 +648,7 @@ function addMessage(role, text) {
   scrollToBottom();
 
   // Add to history
-  conversationHistory.push({ role, text, timestamp: Date.now() });
+  conversationHistory.push({ role, text, responseTime, timestamp: Date.now() });
 }
 
 /**
@@ -714,6 +731,15 @@ async function loadHistory() {
         textEl.textContent = msg.text;
 
         content.appendChild(textEl);
+
+        // Add response time if available
+        if (msg.role === 'assistant' && msg.responseTime) {
+          const timeEl = document.createElement('div');
+          timeEl.className = 'message-time';
+          timeEl.textContent = `Thought for: ${msg.responseTime}s`;
+          content.appendChild(timeEl);
+        }
+
         messageEl.appendChild(avatar);
         messageEl.appendChild(content);
 
