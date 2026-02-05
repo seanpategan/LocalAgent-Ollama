@@ -427,7 +427,9 @@ function selectCurrentTab() {
   const cursorPos = getCursorPosition();
   
   // Replace @ mention with tag element
+  // currentAtMentionStart points to the @ character, so we include everything from before it
   const beforeAt = text.substring(0, currentAtMentionStart);
+  // afterCursor is everything after the current cursor position (excluding @ and search term)
   const afterCursor = text.substring(cursorPos);
   
   // Create the mention tag
@@ -446,9 +448,15 @@ function selectCurrentTab() {
   }
   
   queryInput.appendChild(mentionTag);
-  queryInput.appendChild(document.createTextNode(' ' + afterCursor));
   
-  // Set cursor after the mention tag
+  // Add space and remaining text after cursor
+  if (afterCursor) {
+    queryInput.appendChild(document.createTextNode(' ' + afterCursor));
+  } else {
+    queryInput.appendChild(document.createTextNode(' '));
+  }
+  
+  // Set cursor after the mention tag and the space
   const newCursorPos = beforeAt.length + tabTitle.length + 1;
   setTimeout(() => {
     setCursorPosition(newCursorPos);
