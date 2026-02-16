@@ -19,6 +19,7 @@ let selectedModel = null;
 let allTabs = [];
 let selectedTabIndex = -1;
 let currentAtMentionStart = -1;
+let queryStartTime = null; // Track when query starts
 
 /**
  * Initialize the side panel
@@ -32,6 +33,23 @@ async function init() {
   reconnectBtn.addEventListener('click', handleReconnect);
   newChatBtn.addEventListener('click', handleNewChat);
 
+  document.getElementById('lighting-btn').addEventListener('click', function() {
+    document.documentElement.classList.toggle('dark');
+    
+    // Save theme preference
+    if (document.documentElement.classList.contains('dark')) {
+      localStorage.setItem('theme', 'dark');
+    } else {
+      localStorage.setItem('theme', 'light');
+    }
+  });
+
+  // Load saved theme preference
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  }
+
   // Load tabs for autocomplete
   await loadTabs();
   setInterval(loadTabs, 10000); // Refresh tabs every 10 seconds
@@ -39,9 +57,9 @@ async function init() {
   // Suggestion buttons
   document.querySelectorAll('.suggestion-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      queryInput.value = btn.dataset.query;
+      queryInput.textContent = btn.dataset.query;
       queryInput.focus();
-      queryInput.selectionStart = queryInput.selectionEnd = queryInput.value.length;
+      setCursorPosition(queryInput.textContent.length);
       handleInputChange();
     });
   });
@@ -206,15 +224,15 @@ async function handleNewChat() {
   // Re-attach suggestion button listeners
   welcomeMsg.querySelectorAll('.suggestion-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      queryInput.value = btn.dataset.query;
+      queryInput.textContent = btn.dataset.query;
       queryInput.focus();
-      queryInput.selectionStart = queryInput.selectionEnd = queryInput.value.length;
+      setCursorPosition(queryInput.textContent.length);
       handleInputChange();
     });
   });
 
   // Clear input
-  queryInput.value = '';
+  queryInput.textContent = '';
   handleInputChange();
 }
 
@@ -233,11 +251,64 @@ async function loadTabs() {
 }
 
 /**
+ * Get cursor position in contenteditable div
+ */
+function getCursorPosition() {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return 0;
+  
+  const range = selection.getRangeAt(0);
+  const preCaretRange = range.cloneRange();
+  preCaretRange.selectNodeContents(queryInput);
+  preCaretRange.setEnd(range.endContainer, range.endOffset);
+  
+  return preCaretRange.toString().length;
+}
+
+/**
+ * Set cursor position in contenteditable div
+ */
+function setCursorPosition(pos) {
+  const selection = window.getSelection();
+  const range = document.createRange();
+  
+  let currentPos = 0;
+  let found = false;
+  
+  function searchNode(node) {
+    if (found) return;
+    
+    if (node.nodeType === Node.TEXT_NODE) {
+      const length = node.textContent.length;
+      if (currentPos + length >= pos) {
+        range.setStart(node, Math.min(pos - currentPos, length));
+        range.collapse(true);
+        found = true;
+        return;
+      }
+      currentPos += length;
+    } else {
+      for (let child of node.childNodes) {
+        searchNode(child);
+        if (found) return;
+      }
+    }
+  }
+  
+  searchNode(queryInput);
+  
+  if (found) {
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+}
+
+/**
  * Detect @ mention in input and show autocomplete
  */
 function detectAtMention() {
-  const text = queryInput.value;
-  const cursorPos = queryInput.selectionStart;
+  const text = queryInput.textContent;
+  const cursorPos = getCursorPosition();
 
   // Find @ symbol before cursor
   let atPos = -1;
@@ -349,51 +420,100 @@ function selectCurrentTab() {
 
   const selectedItem = items[selectedTabIndex];
   const tabTitle = selectedItem.querySelector('.tab-suggestion-title').textContent;
+  const tabUrl = selectedItem.querySelector('.tab-suggestion-url').textContent;
 
-  // Replace @ mention with @"tabname"
-  const text = queryInput.value;
+  // Get current text and cursor position
+  const text = queryInput.textContent;
+  const cursorPos = getCursorPosition();
+  
+  // Replace @ mention with tag element
+  // currentAtMentionStart points to the @ character, so we include everything from before it
   const beforeAt = text.substring(0, currentAtMentionStart);
-  const afterCursor = text.substring(queryInput.selectionStart);
-  const newText = beforeAt + `@"${tabTitle}" ` + afterCursor;
-
-  queryInput.value = newText;
-  queryInput.selectionStart = queryInput.selectionEnd = beforeAt.length + tabTitle.length + 4;
+  // afterCursor is everything after the current cursor position (excluding @ and search term)
+  const afterCursor = text.substring(cursorPos);
+  
+  // Create the mention tag
+  const mentionTag = document.createElement('span');
+  mentionTag.className = 'tab-mention';
+  mentionTag.contentEditable = 'false';
+  mentionTag.textContent = tabTitle;
+  mentionTag.dataset.tabTitle = tabTitle;
+  mentionTag.dataset.tabUrl = tabUrl;
+  
+  // Clear and rebuild content
+  queryInput.textContent = '';
+  
+  if (beforeAt) {
+    queryInput.appendChild(document.createTextNode(beforeAt));
+  }
+  
+  queryInput.appendChild(mentionTag);
+  
+  // Add space and remaining text after cursor
+  if (afterCursor) {
+    queryInput.appendChild(document.createTextNode(' ' + afterCursor));
+  } else {
+    queryInput.appendChild(document.createTextNode(' '));
+  }
+  
+  // Set cursor after the mention tag and the space
+  const newCursorPos = beforeAt.length + tabTitle.length + 1;
+  setTimeout(() => {
+    setCursorPosition(newCursorPos);
+    queryInput.focus();
+  }, 0);
 
   hideAutocomplete();
-  queryInput.focus();
   handleInputChange();
 }
 
 /**
  * Parse @mentions from query text
  */
-function parseTabMentions(text) {
+function parseTabMentions() {
   const mentions = [];
-  const regex = /@"([^"]+)"/g;
-  let match;
-
-  while ((match = regex.exec(text)) !== null) {
-    const tabName = match[1];
-    const tab = allTabs.find(t => t.title === tabName);
+  const mentionElements = queryInput.querySelectorAll('.tab-mention');
+  
+  mentionElements.forEach(element => {
+    const tabTitle = element.dataset.tabTitle;
+    const tab = allTabs.find(t => t.title === tabTitle);
     if (tab) {
       mentions.push(tab);
     }
-  }
+  });
 
   return mentions;
+}
+
+/**
+ * Get plain text from contenteditable (for sending)
+ */
+function getPlainText() {
+  let text = '';
+  
+  function extractText(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent;
+    } else if (node.classList && node.classList.contains('tab-mention')) {
+      text += `@"${node.dataset.tabTitle}"`;
+    } else {
+      for (let child of node.childNodes) {
+        extractText(child);
+      }
+    }
+  }
+  
+  extractText(queryInput);
+  return text;
 }
 
 /**
  * Handle input changes
  */
 function handleInputChange() {
-  const hasText = queryInput.value.trim().length > 0;
+  const hasText = queryInput.textContent.trim().length > 0;
   const hasModel = selectedModel !== null && selectedModel !== '';
   sendBtn.disabled = !hasText || !hasModel || isLoading;
-
-  // Auto-resize textarea
-  queryInput.style.height = 'auto';
-  queryInput.style.height = queryInput.scrollHeight + 'px';
 
   // Check for @ mention
   detectAtMention();
@@ -439,14 +559,14 @@ function handleKeyDown(e) {
  * Handle send button click
  */
 async function handleSend() {
-  const query = queryInput.value.trim();
+  const query = getPlainText().trim();
   if (!query || isLoading || !selectedModel) return;
 
   // Parse tab mentions
-  const mentionedTabs = parseTabMentions(query);
+  const mentionedTabs = parseTabMentions();
 
   // Clear input
-  queryInput.value = '';
+  queryInput.textContent = '';
   handleInputChange();
 
   // Remove welcome message if present
@@ -462,6 +582,9 @@ async function handleSend() {
   isLoading = true;
   const loadingEl = addLoadingMessage();
 
+  // Start timing
+  queryStartTime = Date.now();
+
   try {
     // Send query to background script
     const response = await chrome.runtime.sendMessage({
@@ -474,11 +597,14 @@ async function handleSend() {
       }
     });
 
+    // Calculate response time
+    const responseTime = ((Date.now() - queryStartTime) / 1000).toFixed(1);
+
     // Remove loading
     loadingEl.remove();
 
     if (response.success) {
-      addMessage('assistant', response.text);
+      addMessage('assistant', response.text, responseTime);
     } else {
       addErrorMessage(response.error || 'Unknown error occurred');
     }
@@ -487,6 +613,7 @@ async function handleSend() {
     addErrorMessage(error.message);
   } finally {
     isLoading = false;
+    queryStartTime = null;
     handleInputChange();
   }
 
@@ -497,7 +624,7 @@ async function handleSend() {
 /**
  * Add message to chat
  */
-function addMessage(role, text) {
+function addMessage(role, text, responseTime = null) {
   const messageEl = document.createElement('div');
   messageEl.className = `message ${role}`;
 
@@ -513,6 +640,15 @@ function addMessage(role, text) {
   textEl.textContent = text;
 
   content.appendChild(textEl);
+
+  // Add response time for assistant messages
+  if (role === 'assistant' && responseTime) {
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    timeEl.textContent = `Thought for: ${responseTime}s`;
+    content.appendChild(timeEl);
+  }
+
   messageEl.appendChild(avatar);
   messageEl.appendChild(content);
 
@@ -520,7 +656,7 @@ function addMessage(role, text) {
   scrollToBottom();
 
   // Add to history
-  conversationHistory.push({ role, text, timestamp: Date.now() });
+  conversationHistory.push({ role, text, responseTime, timestamp: Date.now() });
 }
 
 /**
@@ -603,6 +739,15 @@ async function loadHistory() {
         textEl.textContent = msg.text;
 
         content.appendChild(textEl);
+
+        // Add response time if available
+        if (msg.role === 'assistant' && msg.responseTime) {
+          const timeEl = document.createElement('div');
+          timeEl.className = 'message-time';
+          timeEl.textContent = `Thought for: ${msg.responseTime}s`;
+          content.appendChild(timeEl);
+        }
+
         messageEl.appendChild(avatar);
         messageEl.appendChild(content);
 
