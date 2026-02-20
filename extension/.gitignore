@@ -1,0 +1,17 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Chrome extension packaging
+*.crx
+*.pem
+*.zip
+
+# Logs
+*.log
+
+# Node modules (if package.json is used)
+node_modules/
+
+# Empty directories
+src/
