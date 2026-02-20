@@ -159,8 +159,15 @@ async function extractTabContent(tabId) {
       };
     }
 
-    // Send message to content script (auto-injected via manifest.json)
-    const response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
+    // Send message to content script; if it's not injected yet, inject it and retry
+    let response;
+    try {
+      response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
+    } catch (e) {
+      // Content script not loaded — inject it dynamically then retry
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
+    }
 
     if (response && response.success) {
       return {
@@ -223,8 +230,14 @@ async function extractActiveTabContent() {
       };
     }
 
-    // Send message to content script (auto-injected via manifest.json)
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
+    // Send message to content script; if it's not injected yet, inject it and retry
+    let response;
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
+    } catch (e) {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+      response = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
+    }
 
     if (response && response.success) {
       return response.data;
