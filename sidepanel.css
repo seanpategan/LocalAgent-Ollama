@@ -16,18 +16,18 @@
   --color-yellow-500: #f59e0b;
   --color-red-50: #fef2f2;
   --color-red-200: #fecaca;
-  --color-red-700: #991b1b;
   --color-red-500: #ef4444;
+  --color-red-700: #991b1b;
 }
 
 :root.dark {
   --color-white: #0b1220;
-  --color-gray-50:  #0f172a; 
-  --color-gray-100: #111827; 
-  --color-gray-200: #1f2937; 
-  --color-gray-300: #374151; 
-  --color-gray-400: #6b7280; 
-  --color-gray-500: #9ca3af; 
+  --color-gray-50: #0f172a;
+  --color-gray-100: #111827;
+  --color-gray-200: #1f2937;
+  --color-gray-300: #374151;
+  --color-gray-400: #6b7280;
+  --color-gray-500: #9ca3af;
   --color-gray-600: #d1d5db;
   --color-gray-800: #e5e7eb;
   --color-gray-900: #f9fafb;
@@ -36,12 +36,11 @@
   --color-purple-500: #a78bfa;
   --color-green-500: #34d399;
   --color-yellow-500: #fbbf24;
-  --color-red-50:  #450a0a;
+  --color-red-50: #450a0a;
   --color-red-200: #7f1d1d;
   --color-red-500: #f87171;
   --color-red-700: #fecaca;
 }
-
 
 * {
   margin: 0;
@@ -132,11 +131,11 @@ body {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  margin-left: 4px;
+  margin-left: auto;
 }
 
-.reconnect-btn:first-of-type {
-  margin-left: auto;
+.reconnect-btn + .reconnect-btn {
+  margin-left: 4px;
 }
 
 .reconnect-btn:hover {
@@ -152,15 +151,6 @@ body {
 .reconnect-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-@keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .status-indicator {
@@ -275,12 +265,12 @@ body {
 
 .message.user .message-avatar {
   background: var(--color-blue-500);
-  color: var(--color-white);
+  color: #ffffff;
 }
 
 .message.assistant .message-avatar {
   background: var(--color-purple-500);
-  color: var(--color-white);
+  color: #ffffff;
 }
 
 .message-content {
@@ -294,7 +284,7 @@ body {
 
 .message.user .message-content {
   background: var(--color-blue-500);
-  color: var(--color-white);
+  color: #ffffff;
   border-color: var(--color-blue-500);
 }
 
@@ -306,13 +296,6 @@ body {
 .message-text {
   white-space: pre-wrap;
   word-wrap: break-word;
-}
-
-.message-time {
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--color-gray-400);
-  font-style: italic;
 }
 
 .loading-message {
@@ -433,7 +416,7 @@ body {
 #query-input {
   flex: 1;
   border: 1px solid var(--color-gray-300);
-  background-color: var(--color-gray-100);
+  background: var(--color-gray-100);
   color: var(--color-gray-900);
   border-radius: 8px;
   padding: 10px 12px;
@@ -450,64 +433,13 @@ body {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.query-input-editable {
-  flex: 1;
-  border: 1px solid var(--color-gray-300);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-family: inherit;
-  font-size: 14px;
-  max-height: 120px;
-  overflow-y: auto;
-  transition: border-color 0.2s;
-  min-height: 40px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-.query-input-editable:empty:before {
-  content: attr(data-placeholder);
-  color: var(--color-gray-400);
-  pointer-events: none;
-}
-
-.query-input-editable:focus {
-  outline: none;
-  border-color: var(--color-blue-500);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.tab-mention {
-  display: inline-flex;
-  align-items: center;
-  background: var(--color-blue-500);
-  color: var(--color-white);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 13px;
-  margin: 0 2px;
-  user-select: all;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.tab-mention:hover {
-  background: var(--color-blue-600);
-}
-
-.tab-mention::before {
-  content: '@';
-  margin-right: 2px;
-  font-weight: 600;
-}
-
 .send-btn {
   width: 40px;
   height: 40px;
   border: none;
   border-radius: 8px;
   background: var(--color-blue-500);
-  color: var(--color-white);
+  color: #ffffff;
   cursor: pointer;
   display: flex;
   align-items: center;
