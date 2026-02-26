@@ -115,7 +115,8 @@ async function getAllTabs() {
       id: tab.id,
       title: tab.title,
       url: tab.url,
-      active: tab.active
+      active: tab.active,
+      favIconUrl: tab.favIconUrl || ''
     }));
   } catch (error) {
     console.error('Error getting tabs:', error);
@@ -159,14 +160,17 @@ async function extractTabContent(tabId) {
       };
     }
 
-    // Send message to content script; if it's not injected yet, inject it and retry
+    // Send message to content script
     let response;
     try {
       response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
     } catch (e) {
-      // Content script not loaded — inject it dynamically then retry
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-      response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
+      return {
+        title: tab.title || 'Error',
+        url: tab.url || '',
+        content: '[Could not extract content - try refreshing the tab]',
+        contentLength: 0
+      };
     }
 
     if (response && response.success) {
@@ -230,13 +234,17 @@ async function extractActiveTabContent() {
       };
     }
 
-    // Send message to content script; if it's not injected yet, inject it and retry
+    // Send message to content script
     let response;
     try {
       response = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
     } catch (e) {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-      response = await chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
+      return {
+        title: 'Current Tab',
+        url: '',
+        content: '[Could not extract content - try refreshing the tab]',
+        contentLength: 0
+      };
     }
 
     if (response && response.success) {
@@ -398,7 +406,7 @@ Answer:`;
  */
 async function handleStreamingQuery(data, tabId) {
   try {
-    const { query, model, includePageContent, messageId } = data;
+    const { query, model, includePageContent, mentionedTabs = [], messageId } = data;
 
     if (!model) {
       throw new Error('No model selected');
@@ -406,7 +414,16 @@ async function handleStreamingQuery(data, tabId) {
 
     let prompt = query;
 
-    if (includePageContent) {
+    if (mentionedTabs.length > 0) {
+      const tabContents = await Promise.all(
+        mentionedTabs.map(tab => extractTabContent(tab.id))
+      );
+      const contextParts = tabContents.map((tabData, index) => {
+        const tabInfo = mentionedTabs[index];
+        return `Tab: ${tabInfo.title}\nURL: ${tabInfo.url}\n\nContent:\n${tabData.content}`;
+      });
+      prompt = `Based on the following web page content from referenced tabs, please answer the question.\n\n${contextParts.join('\n---\n\n')}\n\nQuestion: ${query}\n\nAnswer:`;
+    } else if (includePageContent) {
       try {
         const pageData = await extractActiveTabContent();
         prompt = `Based on the following web page content, please answer the question.
