@@ -42,6 +42,6 @@
    "side_panel": {
       "default_path": "sidepanel.html"
    },
-   "permissions": [ "sidePanel", "storage", "activeTab", "scripting", "debugger", "tabGroups", "tabs", "alarms", "notifications", "system.display", "webNavigation", "declarativeNetRequestWithHostAccess", "offscreen", "nativeMessaging", "unlimitedStorage", "downloads" ],
+   "permissions": [ "sidePanel", "storage", "activeTab", "scripting", "tabs" ],
    "version": "1.0.0"
 }
