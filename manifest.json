@@ -1,0 +1,47 @@
+{
+   "action": {
+      "default_title": "Local-Agent Ollama",
+      "default_icon": {
+         "16": "icon-16.png",
+         "48": "icon-48.png",
+         "128": "icon-128.png"
+      }
+   },
+   "background": {
+      "service_worker": "service-worker-loader.js",
+      "type": "module"
+   },
+   "commands": {
+      "toggle-side-panel": {
+         "description": "Toggle Local-Agent Ollama side panel",
+         "suggested_key": {
+            "default": "Ctrl+E",
+            "mac": "Command+E"
+         }
+      }
+   },
+   "content_scripts": [ {
+      "all_frames": false,
+      "js": [ "content.js" ],
+      "matches": [ "\u003Call_urls>" ],
+      "run_at": "document_idle"
+   } ],
+   "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:;"
+   },
+   "description": "Local AI assistant powered by Ollama. Fully private, running on your machine.",
+   "host_permissions": [ "\u003Call_urls>" ],
+   "icons": {
+      "16": "icon-16.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+   },
+   "manifest_version": 3,
+   "minimum_chrome_version": "116",
+   "name": "Local-Agent Ollama",
+   "side_panel": {
+      "default_path": "sidepanel.html"
+   },
+   "permissions": [ "sidePanel", "storage", "activeTab", "scripting", "debugger", "tabGroups", "tabs", "alarms", "notifications", "system.display", "webNavigation", "declarativeNetRequestWithHostAccess", "offscreen", "nativeMessaging", "unlimitedStorage", "downloads" ],
+   "version": "1.0.0"
+}

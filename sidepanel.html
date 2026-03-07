@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-mode="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Local-Agent Ollama</title>
+  <link rel="icon" href="/lao_icon.svg"/>
+  <link rel="stylesheet" href="/sidepanel.css"/>
+  <script src="/theme-init.js"></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="status-pill">
+      <span id="status-dot" class="dot disconnected"></span>
+      <span id="status-text">Connecting…</span>
+      <button id="reconnect-btn" class="reconnect-btn" title="Reconnect">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+      </button>
+    </div>
+    <div class="toolbar-right">
+      <button id="new-chat-btn" class="icon-btn" title="New chat">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button id="theme-btn" class="icon-btn" title="Toggle theme">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <button id="export-btn" class="text-btn" title="Export chat">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Export
+      </button>
+    </div>
+  </div>
+
+  <!-- Chat -->
+  <div id="chat" class="chat">
+    <div id="welcome" class="welcome">
+      <h2 class="welcome-title">How can I help?</h2>
+      <p class="welcome-desc">Chat, summarize pages, or reference any open tab with <code>@tabname</code>. Fully private — runs on your machine.</p>
+      <div class="suggestions">
+        <button class="suggestion" data-q='Summarize @"'>Summarize a tab</button>
+        <button class="suggestion" data-q='What are the key points in @"'>Key points</button>
+        <button class="suggestion" data-q='Explain @"'>Explain this page</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-area">
+    <div id="autocomplete" class="autocomplete" style="display:none">
+      <div id="autocomplete-list"></div>
+    </div>
+    <div class="input-controls">
+      <select id="model-select" class="model-select"><option>Loading…</option></select>
+      <button id="agent-btn" class="agent-btn" title="Agent mode — AI can click, type and navigate the page">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+        Agent
+      </button>
+    </div>
+    <div class="input-row">
+      <textarea id="input" placeholder="Ask anything…" rows="1"></textarea>
+      <button id="send-btn" class="send-btn" disabled>
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M2 10L18 2L10 18L9 11L2 10Z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </div>
+
+</div>
+<script src="/sidepanel.js"></script>
+</body>
+</html>
