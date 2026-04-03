@@ -1,7 +1,8 @@
 # Local-Agent Ollama
 
-[![Chrome](https://chromewebstore.google.com/detail/local-agent-ollama/mkhiohkkekffefiggoijacbgcpdfmlfp?authuser=0&hl=en)
-
+[![Chrome](https://img.shields.io/badge/Chrome-Supported-4285F4?style=flat&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/local-agent-ollama/mkhiohkkekffefiggoijacbgcpdfmlfp?authuser=0&hl=en)
+[![Firefox](https://img.shields.io/badge/Firefox-Supported-FF7139?style=flat&logo=firefox-browser&logoColor=white)]()
+[![Ollama](https://img.shields.io/badge/Ollama-Integrated-orange?style=flat&logo=llama&logoColor=white)](https://github.com/ollama/ollama)
 
 A private, local AI browser extension powered by [Ollama](https://ollama.com). Chat with any webpage, summarize tabs, and automate browser tasks — fully on your machine, no data sent to the cloud.
 
