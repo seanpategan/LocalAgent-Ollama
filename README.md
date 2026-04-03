@@ -1,5 +1,8 @@
 # Local-Agent Ollama
 
+[![Chrome](https://chromewebstore.google.com/detail/local-agent-ollama/mkhiohkkekffefiggoijacbgcpdfmlfp?authuser=0&hl=en)
+
+
 A private, local AI browser extension powered by [Ollama](https://ollama.com). Chat with any webpage, summarize tabs, and automate browser tasks — fully on your machine, no data sent to the cloud.
 
 ## Features
