@@ -1,6 +1,8 @@
 # Local-Agent Ollama
 
+<div align="center">
 <img src="githublaogif.gif" alt="failed to load" width="800">
+</div>
 
 [![Chrome](https://img.shields.io/badge/Chrome-Supported-4285F4?style=flat&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/local-agent-ollama/mkhiohkkekffefiggoijacbgcpdfmlfp?authuser=0&hl=en)
 [![Firefox](https://img.shields.io/badge/Firefox-Coming%20Soon-FF7139?style=flat&logo=firefox-browser&logoColor=white)]()
