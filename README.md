@@ -1,5 +1,6 @@
 # Local-Agent Ollama
 
+Agentic showcase:
 <div align="center">
 <img src="githublaogif.gif" alt="failed to load" width="400">
 </div>
