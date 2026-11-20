@@ -20,6 +20,9 @@ const modelCountBadge  = document.getElementById('model-count-badge');
 const refreshModelsBtn = document.getElementById('refresh-models-btn');
 const dictateBtn       = document.getElementById('dictate-btn');
 const settingsBtn      = document.getElementById('settings-btn');
+const micBlockedBanner      = document.getElementById('mic-blocked-banner');
+const sidepanelUnlockMicBtn = document.getElementById('sidepanel-unlock-mic-btn');
+const dismissMicBannerBtn   = document.getElementById('dismiss-mic-banner-btn');
 
 let history       = [];     // { role, text, timestamp }
 let allTabs       = [];
@@ -261,6 +264,10 @@ function getInputText() {
   input.childNodes.forEach(node => {
     if (node.nodeType === Node.TEXT_NODE) {
       text += node.textContent;
+    } else if (node.classList?.contains('mcp-pill')) {
+      const server = node.dataset.mcpServer || '';
+      const tool = node.dataset.mcpTool || '';
+      text += tool ? `/[${server}:${tool}] ` : `/[${server}] `;
     } else if (node.classList?.contains('mention-pill')) {
       text += `@"${node.dataset.tabTitle}" `;
     } else if (node.nodeName === 'BR') {
@@ -286,7 +293,7 @@ function setInputPlain(text) {
 }
 
 function getMentionedTabs() {
-  const pills = input.querySelectorAll('.mention-pill');
+  const pills = input.querySelectorAll('.mention-pill:not(.mcp-pill)');
   const tabs = [];
   pills.forEach(p => {
     const id = Number(p.dataset.tabId);
@@ -309,6 +316,39 @@ function getMentionedTabs() {
   return tabs;
 }
 
+function parseMcpMentions(text) {
+  const mcp = [];
+  const regex = /\/\[([^\]:]+)(?::([^\]]+))?\]/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    mcp.push({
+      server: match[1].trim(),
+      tool: match[2] ? match[2].trim() : null
+    });
+  }
+  return mcp;
+}
+
+function getMentionedMCP() {
+  const pills = input.querySelectorAll('.mention-pill.mcp-pill');
+  const mcp = [];
+  pills.forEach(p => {
+    mcp.push({
+      server: p.dataset.mcpServer,
+      tool: p.dataset.mcpTool || null
+    });
+  });
+
+  const textMcp = parseMcpMentions(getInputText());
+  textMcp.forEach(m => {
+    if (!mcp.some(existing => existing.server.toLowerCase() === m.server.toLowerCase() && existing.tool === m.tool)) {
+      mcp.push(m);
+    }
+  });
+
+  return mcp;
+}
+
 // ── Send ──────────────────────────────────────────────────────────────────
 
 async function handleSend() {
@@ -316,6 +356,7 @@ async function handleSend() {
   if (!query || isLoading || !selectedModel) return;
 
   const mentionedTabs = getMentionedTabs();
+  const mentionedMCP = getMentionedMCP();
 
   clearInput();
   hideAutocomplete();
@@ -330,7 +371,7 @@ async function handleSend() {
 
   if (agentMode) {
     startAgent(messageId, query);
-    chrome.runtime.sendMessage({ action: 'agentTask', data: { task: query, model: selectedModel, messageId } });
+    chrome.runtime.sendMessage({ action: 'agentTask', data: { task: query, model: selectedModel, messageId, mentionedMCP } });
     saveHistory();
   } else {
     const loadingEl = addThinking();
@@ -343,7 +384,14 @@ async function handleSend() {
 
     chrome.runtime.sendMessage({
       action: 'queryStream',
-      data: { query, model: selectedModel, mentionedTabs: mentionedTabs.map(t => ({ id: t.id, title: t.title, url: t.url })), history: historyContext, messageId }
+      data: {
+        query,
+        model: selectedModel,
+        mentionedTabs: mentionedTabs.map(t => ({ id: t.id, title: t.title, url: t.url })),
+        mentionedMCP,
+        history: historyContext,
+        messageId
+      }
     });
 
     try { await streamDone; }
@@ -392,7 +440,6 @@ function renderModelList(models) {
     item.innerHTML = `
       <div class="model-item-meta">
         <span class="model-item-title" title="${esc(m.name)}">${esc(m.name)}</span>
-        ${m.provider === 'openrouter' ? '<span class="model-provider-tag">Cloud</span>' : ''}
       </div>
       ${m.name === selectedModel ? `
         <span class="model-item-check">
@@ -420,7 +467,6 @@ function renderModelList(models) {
   ollamaSection.innerHTML = `
     <div class="model-section-header">
       <span class="model-section-title">Ollama</span>
-      <span class="model-section-badge">Local</span>
     </div>
   `;
   if (ollamaModels.length) {
@@ -439,7 +485,6 @@ function renderModelList(models) {
   orSection.innerHTML = `
     <div class="model-section-header">
       <span class="model-section-title">OpenRouter</span>
-      <span class="model-section-badge cloud">Cloud</span>
     </div>
   `;
   if (openrouterModels.length) {
@@ -543,7 +588,16 @@ function parseTabMentions(text) {
   return out;
 }
 
-function detectAt() {
+let allMcpServers = [];
+
+async function loadMcpServers() {
+  try {
+    const data = await chrome.storage.local.get('mcpServers');
+    allMcpServers = Array.isArray(data.mcpServers) ? data.mcpServers : [];
+  } catch {}
+}
+
+function detectTrigger() {
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount) { hideAutocomplete(); return; }
   const range = sel.getRangeAt(0);
@@ -552,64 +606,147 @@ function detectAt() {
 
   const textBefore = node.textContent.slice(0, range.startOffset);
   const atIdx = textBefore.lastIndexOf('@');
-  if (atIdx === -1) { hideAutocomplete(); return; }
+  const slashIdx = textBefore.lastIndexOf('/');
 
-  // Ensure @ is at the start of text or preceded by whitespace
-  if (atIdx > 0 && !/\s/.test(textBefore[atIdx - 1])) {
+  const triggerIdx = Math.max(atIdx, slashIdx);
+  if (triggerIdx === -1) { hideAutocomplete(); return; }
+
+  // Ensure trigger is at the start of text or preceded by whitespace
+  if (triggerIdx > 0 && !/\s/.test(textBefore[triggerIdx - 1])) {
     hideAutocomplete();
     return;
   }
 
-  const query = textBefore.slice(atIdx + 1).toLowerCase();
+  const triggerChar = textBefore[triggerIdx]; // '@' or '/'
+  const query = textBefore.slice(triggerIdx + 1).toLowerCase();
   if (query.includes('\n')) { hideAutocomplete(); return; }
 
-  const hits = allTabs.filter(t =>
-    t.title?.toLowerCase().includes(query) || t.url?.toLowerCase().includes(query)
-  );
+  if (triggerChar === '@') {
+    const hits = allTabs.filter(t =>
+      t.title?.toLowerCase().includes(query) || t.url?.toLowerCase().includes(query)
+    );
 
-  if (!hits.length) { hideAutocomplete(); return; }
+    if (!hits.length) { hideAutocomplete(); return; }
 
-  savedRange = {
-    node,
-    atOffset: atIdx,
-    endOffset: range.startOffset
-  };
+    savedRange = {
+      trigger: '@',
+      node,
+      atOffset: triggerIdx,
+      endOffset: range.startOffset
+    };
 
-  showAutocomplete(hits);
+    showAutocomplete(hits, '@');
+  } else if (triggerChar === '/') {
+    const hits = [];
+    allMcpServers.forEach(server => {
+      const sName = (server.name || '').toLowerCase();
+      const sMatch = sName.includes(query);
+      if (sMatch) {
+        hits.push({
+          type: 'mcp-server',
+          server,
+          title: `/${server.name}`,
+          description: `${server.tools?.length || 0} tools · ${server.authType || 'none'}`,
+          url: server.originalUrl || server.url
+        });
+      }
+
+      if (server.tools && server.tools.length) {
+        server.tools.forEach(tool => {
+          const tName = (tool.name || '').toLowerCase();
+          const tDesc = (tool.description || '').toLowerCase();
+          if (tName.includes(query) || tDesc.includes(query) || sMatch) {
+            hits.push({
+              type: 'mcp-tool',
+              server,
+              tool,
+              title: `/${server.name}:${tool.name}`,
+              description: tool.description || `Tool from ${server.name}`,
+              url: server.name
+            });
+          }
+        });
+      }
+    });
+
+    if (!allMcpServers.length) {
+      hits.push({
+        type: 'mcp-empty',
+        title: 'No MCP servers connected',
+        description: 'Click to open Settings and connect an MCP server',
+        url: 'settings.html'
+      });
+    } else if (!hits.length) {
+      hideAutocomplete();
+      return;
+    }
+
+    savedRange = {
+      trigger: '/',
+      node,
+      atOffset: triggerIdx,
+      endOffset: range.startOffset
+    };
+
+    showAutocomplete(hits, '/');
+  }
 }
 
-function showAutocomplete(tabs) {
+function showAutocomplete(items, trigger = '@') {
   autocompleteList.innerHTML = '';
   tabIdx = -1;
-  tabs.forEach((tab, i) => {
-    const item = document.createElement('div');
-    item.className = 'tab-item';
-    item.dataset.i = i;
-    if (tab.favIconUrl) {
-      const img = document.createElement('img');
-      img.className = 'tab-favicon';
-      img.src = tab.favIconUrl;
-      img.width = img.height = 14;
-      img.onerror = () => img.remove();
-      item.appendChild(img);
+  items.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'tab-item';
+    el.dataset.i = i;
+
+    if (trigger === '@') {
+      const tab = item;
+      if (tab.favIconUrl) {
+        const img = document.createElement('img');
+        img.className = 'tab-favicon';
+        img.src = tab.favIconUrl;
+        img.width = img.height = 14;
+        img.onerror = () => img.remove();
+        el.appendChild(img);
+      }
+      const info = document.createElement('div');
+      info.className = 'tab-info';
+      info.innerHTML = `<div class="tab-title">${esc(tab.title || 'Untitled')}</div><div class="tab-url">${esc(tab.url)}</div>`;
+      el.appendChild(info);
+
+      el.addEventListener('mousedown', e => e.preventDefault());
+      el.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        insertMentionPill(tab);
+      });
+    } else {
+      const mcpItem = item;
+      const icon = document.createElement('span');
+      icon.className = 'mcp-icon';
+      icon.textContent = mcpItem.type === 'mcp-server' ? 'S' : (mcpItem.type === 'mcp-empty' ? '⚙' : 'T');
+      el.appendChild(icon);
+
+      const info = document.createElement('div');
+      info.className = 'tab-info';
+      info.innerHTML = `<div class="tab-title">${esc(mcpItem.title)}</div><div class="tab-url">${esc(mcpItem.description || mcpItem.url)}</div>`;
+      el.appendChild(info);
+
+      el.addEventListener('mousedown', e => e.preventDefault());
+      el.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (mcpItem.type === 'mcp-empty') {
+          hideAutocomplete();
+          chrome.tabs.create({ url: chrome.runtime.getURL('settings.html') });
+          return;
+        }
+        insertMCPPill(mcpItem);
+      });
     }
-    const info = document.createElement('div');
-    info.className = 'tab-info';
-    info.innerHTML = `<div class="tab-title">${esc(tab.title || 'Untitled')}</div><div class="tab-url">${esc(tab.url)}</div>`;
-    item.appendChild(info);
 
-    // Prevent mousedown from blurring the input field and breaking selection
-    item.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-    });
-
-    item.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      insertMentionPill(tab);
-    });
-
-    autocompleteList.appendChild(item);
+    autocompleteList.appendChild(el);
   });
   autocomplete.style.display = 'block';
 }
@@ -629,14 +766,14 @@ function navAutocomplete(dir) {
   items[tabIdx].scrollIntoView({ block: 'nearest' });
 }
 
-function stripTrailingAtBefore(pill) {
+function stripTrailingTriggerBefore(pill, trigger = '@') {
   let prev = pill.previousSibling;
   while (prev) {
     if (prev.nodeType === Node.TEXT_NODE) {
-      if (prev.textContent.endsWith('@')) {
+      if (prev.textContent.endsWith(trigger)) {
         prev.textContent = prev.textContent.slice(0, -1);
-      } else if (/@\s*$/.test(prev.textContent)) {
-        prev.textContent = prev.textContent.replace(/@\s*$/, '');
+      } else if (new RegExp(`\\${trigger}\\s*$`).test(prev.textContent)) {
+        prev.textContent = prev.textContent.replace(new RegExp(`\\${trigger}\\s*$`), '');
       }
       break;
     } else if (prev.classList?.contains('mention-pill')) {
@@ -646,9 +783,12 @@ function stripTrailingAtBefore(pill) {
   }
 }
 
-function cleanAllStrayAts() {
+function cleanAllStrayTriggers() {
   const pills = input.querySelectorAll('.mention-pill');
-  pills.forEach(p => stripTrailingAtBefore(p));
+  pills.forEach(p => {
+    stripTrailingTriggerBefore(p, '@');
+    stripTrailingTriggerBefore(p, '/');
+  });
 }
 
 function insertMentionPill(tab) {
@@ -699,7 +839,7 @@ function insertMentionPill(tab) {
   }
 
   if (!inserted) {
-    cleanTrailingAt();
+    cleanTrailingTrigger('@');
     input.appendChild(pill);
     input.appendChild(space);
     const caretRange = document.createRange();
@@ -710,19 +850,94 @@ function insertMentionPill(tab) {
   }
 
   // Ensure absolutely no stray @ remains in preceding text nodes
-  stripTrailingAtBefore(pill);
-  cleanAllStrayAts();
+  stripTrailingTriggerBefore(pill, '@');
+  cleanAllStrayTriggers();
 
   savedRange = null;
   input.focus();
   updateSend();
 }
 
-function cleanTrailingAt() {
+function insertMCPPill(item) {
+  const rangeInfo = savedRange;
+  hideAutocomplete();
+
+  const pill = document.createElement('span');
+  pill.className = 'mention-pill mcp-pill';
+  pill.contentEditable = 'false';
+
+  const isTool = item.type === 'mcp-tool';
+  const serverName = item.server?.name || '';
+  const toolName = isTool ? item.tool?.name : '';
+
+  pill.dataset.mcpServer = serverName;
+  if (isTool) pill.dataset.mcpTool = toolName;
+
+  const displayTitle = isTool ? `${serverName}:${toolName}` : serverName;
+
+  pill.innerHTML = `
+    <span class="pill-at">/</span>
+    <span class="pill-title">${esc(displayTitle)}</span>
+    <button class="pill-remove" type="button" tabindex="-1" title="Remove">×</button>
+  `;
+
+  pill.querySelector('.pill-remove').addEventListener('click', (e) => {
+    e.stopPropagation();
+    pill.remove();
+    updateSend();
+    input.focus();
+  });
+
+  const space = document.createTextNode('\u00A0');
+  const sel = window.getSelection();
+  let inserted = false;
+
+  if (rangeInfo && rangeInfo.node && rangeInfo.node.parentNode) {
+    try {
+      const r = document.createRange();
+      r.setStart(rangeInfo.node, rangeInfo.atOffset);
+      r.setEnd(rangeInfo.node, rangeInfo.endOffset);
+      r.deleteContents();
+      r.insertNode(space);
+      r.insertNode(pill);
+
+      const caretRange = document.createRange();
+      caretRange.setStartAfter(space);
+      caretRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(caretRange);
+      inserted = true;
+    } catch (err) {
+      console.warn('Range insertion error, falling back:', err);
+    }
+  }
+
+  if (!inserted) {
+    cleanTrailingTrigger('/');
+    input.appendChild(pill);
+    input.appendChild(space);
+    const caretRange = document.createRange();
+    caretRange.setStartAfter(space);
+    caretRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(caretRange);
+  }
+
+  // Ensure no stray / remains in preceding text nodes
+  stripTrailingTriggerBefore(pill, '/');
+  cleanAllStrayTriggers();
+
+  savedRange = null;
+  input.focus();
+  updateSend();
+}
+
+function cleanTrailingTrigger(trigger = '@') {
   for (let i = input.childNodes.length - 1; i >= 0; i--) {
     const child = input.childNodes[i];
     if (child.nodeType === Node.TEXT_NODE) {
-      const m = child.textContent.match(/@([a-zA-Z0-9_\-\s]*)$/);
+      const re = new RegExp(`\\${trigger}([a-zA-Z0-9_\\-\\s]*)$`);
+      const m = child.textContent.match(re);
       if (m) {
         child.textContent = child.textContent.slice(0, child.textContent.length - m[0].length);
         break;
@@ -756,7 +971,8 @@ function initSpeechRecognition() {
       }
     }
     if (finalTranscript) {
-      const space = input.textContent.length ? ' ' : '';
+      const current = input.textContent.trim();
+      const space = current.length ? ' ' : '';
       input.appendChild(document.createTextNode(space + finalTranscript.trim()));
       updateSend();
     }
@@ -764,6 +980,9 @@ function initSpeechRecognition() {
 
   rec.onerror = event => {
     console.warn('Speech recognition error:', event.error);
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      showMicBlockedBanner();
+    }
     stopRecording();
   };
 
@@ -774,13 +993,31 @@ function initSpeechRecognition() {
   return rec;
 }
 
-function toggleDictation() {
+function showMicBlockedBanner() {
+  if (micBlockedBanner) micBlockedBanner.style.display = 'flex';
+}
+
+function hideMicBlockedBanner() {
+  if (micBlockedBanner) micBlockedBanner.style.display = 'none';
+}
+
+async function toggleDictation() {
+  try {
+    if (navigator.permissions?.query) {
+      const perm = await navigator.permissions.query({ name: 'microphone' }).catch(() => null);
+      if (perm?.state === 'denied') {
+        showMicBlockedBanner();
+        return;
+      }
+    }
+  } catch {}
+
   if (!speechRec) {
     speechRec = initSpeechRecognition();
   }
 
   if (!speechRec) {
-    addError('Speech recognition is not supported in this browser.');
+    alert('Web Speech API is not supported in this browser. Please use Google Chrome or a compatible Chromium browser.');
     return;
   }
 
@@ -791,6 +1028,7 @@ function toggleDictation() {
       speechRec.start();
     } catch (e) {
       console.warn('Error starting speech recognition:', e);
+      showMicBlockedBanner();
       stopRecording();
     }
   }
@@ -808,7 +1046,7 @@ function stopRecording() {
 function updateSend() {
   const text = getInputText();
   sendBtn.disabled = !text || !selectedModel || isLoading;
-  detectAt();
+  detectTrigger();
 }
 
 input.addEventListener('input', updateSend);
@@ -939,8 +1177,28 @@ async function init() {
     input.dataset.placeholder = agentMode ? 'Describe a task for the agent…' : 'Ask anything…';
   });
 
-  // Dictation button
+  // Dictation button & Unlock Microphone Handlers
   dictateBtn.addEventListener('click', toggleDictation);
+  if (sidepanelUnlockMicBtn) {
+    sidepanelUnlockMicBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('settings.html?unlockMic=1') });
+      hideMicBlockedBanner();
+    });
+  }
+  if (dismissMicBannerBtn) {
+    dismissMicBannerBtn.addEventListener('click', hideMicBlockedBanner);
+  }
+
+  try {
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: 'microphone' }).then(perm => {
+        if (perm.state === 'granted') hideMicBlockedBanner();
+        perm.onchange = () => {
+          if (perm.state === 'granted') hideMicBlockedBanner();
+        };
+      }).catch(() => {});
+    }
+  } catch {}
 
   // Model Shelf toggle
   modelShelf.addEventListener('click', toggleModelPopover);
@@ -981,6 +1239,12 @@ async function init() {
 
   await loadTabs();
   setInterval(loadTabs, 10000);
+  await loadMcpServers();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.mcpServers) {
+      allMcpServers = Array.isArray(changes.mcpServers.newValue) ? changes.mcpServers.newValue : [];
+    }
+  });
   await loadModels();
   checkConn();
   setInterval(checkConn, 6000);

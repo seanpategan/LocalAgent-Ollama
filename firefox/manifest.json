@@ -1,0 +1,73 @@
+{
+  "manifest_version": 3,
+  "name": "Local-Agent Ollama",
+  "version": "1.0.0",
+  "description": "Local AI assistant powered by Ollama and OpenRouter. Fully private, running on your machine.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "localagent-ollama@local",
+      "strict_min_version": "115.0"
+    }
+  },
+  "icons": {
+    "16": "lao_icon.svg",
+    "48": "lao_icon.svg",
+    "128": "lao_icon.svg"
+  },
+  "action": {
+    "default_title": "Local-Agent Ollama",
+    "default_icon": "lao_icon.svg"
+  },
+  "sidebar_action": {
+    "default_panel": "sidepanel.html",
+    "default_title": "Local-Agent Ollama",
+    "default_icon": "lao_icon.svg"
+  },
+  "background": {
+    "scripts": ["service-worker-loader.js"],
+    "type": "module"
+  },
+  "commands": {
+    "_execute_sidebar_action": {
+      "description": "Toggle Local-Agent Ollama sidebar",
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      }
+    }
+  },
+  "content_scripts": [
+    {
+      "all_frames": false,
+      "js": ["content.js"],
+      "matches": ["<all_urls>"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* http: https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:;"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "options_ui": {
+    "page": "settings.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "identity",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}

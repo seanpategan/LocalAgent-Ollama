@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en" data-mode="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Local-Agent Ollama</title>
+  <link rel="icon" href="lao_icon.svg"/>
+  <link rel="stylesheet" href="sidepanel.css"/>
+  <script src="theme-init.js"></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top Minimalist Actions (all on the right) -->
+  <div class="top-actions">
+    <div class="top-actions-right">
+      <!-- New chat -->
+      <button id="new-chat-btn" class="top-icon-btn" title="New chat" aria-label="New chat">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+
+      <!-- Settings -->
+      <button id="settings-btn" class="top-icon-btn" title="Open Settings" aria-label="Settings">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="21" x2="4" y2="14"></line>
+          <line x1="4" y1="10" x2="4" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12" y2="3"></line>
+          <line x1="20" y1="21" x2="20" y2="16"></line>
+          <line x1="20" y1="12" x2="20" y2="3"></line>
+          <line x1="1" y1="14" x2="7" y2="14"></line>
+          <line x1="9" y1="8" x2="15" y2="8"></line>
+          <line x1="17" y1="16" x2="23" y2="16"></line>
+        </svg>
+      </button>
+
+      <!-- Theme toggle in top right -->
+      <button id="theme-btn" class="top-icon-btn" title="Toggle theme" aria-label="Toggle theme">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm0-10v8c2.21 0 4-1.79 4-4s-1.79-4-4-4z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Chat stream container -->
+  <main id="chat" class="chat">
+    <div id="welcome" class="welcome">
+      <h2 class="welcome-title">How can I help you today?</h2>
+      <p class="welcome-desc">Chat, navigate web tasks, or reference open tabs with <code>@tabname</code>. Fully private and customizable.</p>
+      <div class="suggestions">
+        <button class="suggestion" data-q="Summarize @">Summarize a tab</button>
+        <button class="suggestion" data-q="What are the key points in @">Key points</button>
+        <button class="suggestion" data-q="Explain @">Explain this page</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Input Area with Shelf -->
+  <footer class="input-area">
+    <!-- Tab mention autocomplete -->
+    <div id="autocomplete" class="autocomplete" style="display:none">
+      <div id="autocomplete-list"></div>
+    </div>
+
+    <!-- Unlock Microphone Banner / Dialog -->
+    <div id="mic-blocked-banner" class="mic-blocked-banner" style="display:none;">
+      <div class="mic-blocked-content">
+        <div class="mic-blocked-icon">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </div>
+        <div class="mic-blocked-text">
+          <span class="mic-blocked-title">Microphone is blocked</span>
+          <span class="mic-blocked-desc">Grant access once in a tab to enable dictation.</span>
+        </div>
+      </div>
+      <div class="mic-blocked-actions">
+        <button id="sidepanel-unlock-mic-btn" class="mic-unlock-btn" type="button">Unlock Mic</button>
+        <button id="dismiss-mic-banner-btn" class="mic-dismiss-btn" type="button" title="Dismiss">×</button>
+      </div>
+    </div>
+
+    <!-- Minimal Model Selector Shelf -->
+    <div class="shelf-wrapper">
+      <button id="model-shelf" class="model-shelf" type="button" title="Select model">
+        <span id="current-model-name" class="model-name">Loading model…</span>
+        <svg class="shelf-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+
+      <!-- Model Selector Popover / Drawer -->
+      <div id="model-popover" class="model-popover" style="display:none">
+        <div class="model-popover-header">
+          <span class="popover-title">Available Models</span>
+          <button id="refresh-models-btn" class="icon-subtle-btn" title="Refresh models">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          </button>
+        </div>
+        <div id="model-list" class="model-list">
+          <div class="model-loading">Loading models…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- The Text Box Container with rich editable pill support -->
+    <div class="input-box-container">
+      <div id="input" class="chat-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Ask anything…" spellcheck="true"></div>
+
+      <!-- Bottom controls row -->
+      <div class="input-bottom-bar">
+        <!-- Agent Mode Switch Button -->
+        <button id="agent-btn" class="agent-switch-btn" title="Switch between Chat and Agent mode" type="button">
+          <span id="agent-btn-text" class="agent-btn-text">Chat</span>
+        </button>
+
+        <!-- Right actions: Audio Dictate & Send -->
+        <div class="input-right-actions">
+          <!-- Voice Dictate Button -->
+          <button id="dictate-btn" class="dictate-btn" title="Dictate message" type="button" aria-label="Dictate message">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z"/>
+            </svg>
+          </button>
+
+          <!-- Send Button -->
+          <button id="send-btn" class="send-btn" disabled title="Send message" type="button" aria-label="Send message">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden fallback select for compatibility -->
+    <select id="model-select" class="model-select" style="display:none"></select>
+  </footer>
+
+</div>
+<script src="mcp-client.js" type="module"></script>
+<script src="sidepanel.js" type="module"></script>
+</body>
+</html>

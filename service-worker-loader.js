@@ -1,5 +1,6 @@
 // Local-Agent Ollama — background service worker
 // (loaded as module for Chrome compatibility with cached registration)
+import { MCPClient } from './mcp-client.js';
 
 let OLLAMA = 'http://127.0.0.1:11434';
 const pendingAgentDecisions = {};
@@ -271,30 +272,88 @@ chrome.runtime.onMessage.addListener((req, _sender, respond) => {
   }
 });
 
+// ── Text tool call extractor for models that emit <tool_call> in text ───────
+
+function extractTextToolCalls(content, mcpToolMap = {}) {
+  const calls = [];
+  if (!content) return calls;
+
+  const xmlRegex = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+  let match;
+  while ((match = xmlRegex.exec(content)) !== null) {
+    const raw = match[1].trim();
+    if (!raw) continue;
+
+    if (raw.startsWith('{') && raw.endsWith('}')) {
+      try {
+        const obj = JSON.parse(raw);
+        const name = obj.name || obj.tool || obj.function;
+        if (name) {
+          calls.push({
+            id: `call_${Date.now()}_${calls.length}_${Math.random().toString(36).slice(2, 7)}`,
+            type: 'function',
+            function: {
+              name,
+              arguments: typeof obj.arguments === 'object' ? JSON.stringify(obj.arguments) : String(obj.arguments || '{}')
+            }
+          });
+          continue;
+        }
+      } catch {}
+    }
+
+    const funcMatch = raw.match(/^([a-zA-Z0-9_\-:]+)(?:\s*\(([\s\S]*)\))?$/);
+    if (funcMatch) {
+      const toolName = funcMatch[1].trim();
+      let argsStr = (funcMatch[2] || '').trim();
+      if (!argsStr || argsStr === '()') argsStr = '{}';
+      else if (!argsStr.startsWith('{')) {
+        try { argsStr = JSON.stringify({ input: argsStr }); } catch { argsStr = '{}'; }
+      }
+
+      let targetName = toolName;
+      for (const k of Object.keys(mcpToolMap)) {
+        if (k.toLowerCase() === toolName.toLowerCase() ||
+            mcpToolMap[k].originalName.toLowerCase() === toolName.toLowerCase() ||
+            k.toLowerCase().endsWith(toolName.toLowerCase().replace(/-/g, '_'))) {
+          targetName = k;
+          break;
+        }
+      }
+
+      calls.push({
+        id: `call_${Date.now()}_${calls.length}_${Math.random().toString(36).slice(2, 7)}`,
+        type: 'function',
+        function: {
+          name: targetName,
+          arguments: argsStr
+        }
+      });
+    }
+  }
+
+  return calls;
+}
+
 // ── Streaming chat handler ────────────────────────────────────────────────
 
 async function handleStreamQuery(data) {
-  const { query, model, mentionedTabs = [], history = [], messageId } = data;
+  const { query, model, mentionedTabs = [], mentionedMCP = [], history = [], messageId } = data;
 
   const send = (action, extra) =>
     chrome.runtime.sendMessage({ action, messageId, ...extra }).catch(() => {});
 
   try {
-    let system = 'You are a helpful assistant.';
+    const now = new Date();
+    let system = `You are a helpful assistant. Current date and time: ${now.toLocaleString()} (${now.toISOString()}).`;
     let userContent = query;
 
     if (mentionedTabs.length) {
       const pages = await Promise.all(mentionedTabs.map(t => extractTab(t.id)));
       const ctx = pages.map((p, i) => `=== ${mentionedTabs[i].title} ===\n${p}`).join('\n\n---\n\n');
-      system = 'You are a helpful assistant. Use only the page content provided to answer. Do not invent information not found in the content.';
+      system += `\nUse the page content provided to answer. Do not invent information not found in the content.`;
       userContent = `${ctx}\n\n---\nQuestion: ${query}`;
     }
-
-    const messages = [{ role: 'system', content: system }];
-    for (const h of history) {
-      messages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.text });
-    }
-    messages.push({ role: 'user', content: userContent });
 
     const { openrouterEnabled, openrouterApiKey } = await chrome.storage.local.get([
       'openrouterEnabled',
@@ -303,15 +362,116 @@ async function handleStreamQuery(data) {
 
     const isOpenRouter = (model && model.includes('/')) || (openrouterEnabled && !model.includes(':'));
 
+    // Check if MCP tools should be activated for this query
+    const mcpTools = [];
+    const mcpToolMap = {};
+    if (mentionedMCP.length) {
+      try {
+        const servers = await MCPClient.getServers();
+        for (const m of mentionedMCP) {
+          const srv = servers.find(s => s.name.toLowerCase() === m.server.toLowerCase());
+          if (srv && srv.tools && srv.tools.length) {
+            for (const t of srv.tools) {
+              const cleanName = `mcp_${srv.name}_${t.name}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+              mcpTools.push({
+                type: 'function',
+                function: {
+                  name: cleanName,
+                  description: `[MCP: ${srv.name}] ${t.description || t.name}`,
+                  parameters: t.inputSchema || { type: 'object', properties: {} }
+                }
+              });
+              mcpToolMap[cleanName] = { server: srv, originalName: t.name };
+              mcpToolMap[t.name] = { server: srv, originalName: t.name };
+              mcpToolMap[t.name.replace(/-/g, '_')] = { server: srv, originalName: t.name };
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not prepare MCP tools for stream query:', err);
+      }
+    }
+
+    const messages = [{ role: 'system', content: system }];
+    for (const h of history) {
+      messages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.text });
+    }
+    messages.push({ role: 'user', content: userContent });
+
+    // If MCP tools are invoked, execute tool call before final streaming answer
+    if (mcpTools.length > 0) {
+      let firstMsg;
+      try {
+        firstMsg = await callAgentLLM(model, messages, mcpTools);
+      } catch (e) {
+        console.warn('Initial tool call check error:', e);
+      }
+
+      let toolCalls = firstMsg?.tool_calls;
+      if (!toolCalls?.length && firstMsg?.content) {
+        const extracted = extractTextToolCalls(firstMsg.content, mcpToolMap);
+        if (extracted.length) toolCalls = extracted;
+      }
+
+      if (toolCalls && toolCalls.length) {
+        const sanitizedCalls = toolCalls.map((tc, idx) => ({
+          id: tc.id && String(tc.id).trim() ? String(tc.id) : `call_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 8)}`,
+          type: 'function',
+          function: {
+            name: tc.function?.name || '',
+            arguments: typeof tc.function?.arguments === 'string'
+              ? tc.function.arguments
+              : JSON.stringify(tc.function?.arguments || {})
+          }
+        }));
+
+        messages.push({
+          role: 'assistant',
+          content: firstMsg?.content || '',
+          tool_calls: sanitizedCalls
+        });
+
+        let prefix = '';
+        for (const tc of sanitizedCalls) {
+          const name = tc.function.name;
+          let args = tc.function.arguments;
+          if (typeof args === 'string') {
+            try { args = JSON.parse(args); } catch {}
+          }
+
+          let toolResult = '';
+          if (mcpToolMap[name]) {
+            const { server, originalName } = mcpToolMap[name];
+            prefix += `*Querying ${server.name} (${originalName})…*\n\n`;
+            send('streamChunk', { chunk: prefix, fullText: prefix });
+            try {
+              const res = await MCPClient.callTool(server, originalName, args || {});
+              toolResult = typeof res === 'object' ? JSON.stringify(res, null, 2) : String(res);
+            } catch (err) {
+              toolResult = `Error executing tool: ${err.message}`;
+            }
+          } else {
+            toolResult = `Unknown tool ${name}`;
+          }
+
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            name: name,
+            content: toolResult
+          });
+        }
+      }
+    }
+
+    let full = '';
     if (isOpenRouter && openrouterApiKey) {
-      let full = '';
       await openrouterChat(model, messages, token => {
         full += token;
         send('streamChunk', { chunk: token, fullText: full });
       }, openrouterApiKey);
       send('streamComplete', { text: full });
     } else {
-      let full = '';
       await ollamaChat(model, messages, token => {
         full += token;
         send('streamChunk', { chunk: token, fullText: full });
@@ -381,7 +541,7 @@ const agentTools = [
   { type: 'function', function: { name: 'done',     description: 'Task complete — return final answer', parameters: { type: 'object', properties: { result: { type: 'string' } }, required: ['result'] } } }
 ];
 
-async function callAgentLLM(model, messages) {
+async function callAgentLLM(model, messages, tools = agentTools) {
   const { openrouterEnabled, openrouterApiKey } = await chrome.storage.local.get([
     'openrouterEnabled',
     'openrouterApiKey'
@@ -398,7 +558,7 @@ async function callAgentLLM(model, messages) {
         'HTTP-Referer': 'https://localagent-ollama',
         'X-Title': 'LocalAgent Ollama'
       },
-      body: JSON.stringify({ model, messages, tools: agentTools, stream: false })
+      body: JSON.stringify({ model, messages, tools, stream: false })
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
@@ -411,7 +571,7 @@ async function callAgentLLM(model, messages) {
     const r = await fetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, tools: agentTools, stream: false })
+      body: JSON.stringify({ model, messages, tools, stream: false })
     });
     if (!r.ok) throw new Error(ollamaError(r.status));
     return (await r.json()).message;
@@ -425,6 +585,30 @@ async function handleAgentTask(data) {
   let maxSteps = Number(storageData.maxSteps) || 20;
   const defaultIncrement = Number(storageData.stepIncrement) || 10;
 
+  // Build tools including configured MCP servers
+  const configuredServers = await MCPClient.getServers().catch(() => []);
+  const dynamicTools = [...agentTools];
+  const mcpToolMap = {};
+
+  configuredServers.forEach(srv => {
+    if (srv.tools && srv.tools.length) {
+      srv.tools.forEach(t => {
+        const cleanName = `mcp_${srv.name}_${t.name}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        dynamicTools.push({
+          type: 'function',
+          function: {
+            name: cleanName,
+            description: `[MCP: ${srv.name}] ${t.description || t.name}`,
+            parameters: t.inputSchema || { type: 'object', properties: {} }
+          }
+        });
+        mcpToolMap[cleanName] = { server: srv, originalName: t.name };
+        mcpToolMap[t.name] = { server: srv, originalName: t.name };
+        mcpToolMap[t.name.replace(/-/g, '_')] = { server: srv, originalName: t.name };
+      });
+    }
+  });
+
   const step = (type, content) =>
     chrome.runtime.sendMessage({ action: 'agentStep', messageId, type, content }).catch(() => {});
   const done = text =>
@@ -436,14 +620,12 @@ async function handleAgentTask(data) {
 
   const tree = await getTree(tabId);
   const snippet = tree.length > 3500 ? tree.slice(0, 3500) + '\n…[truncated]' : tree;
+  const now = new Date();
 
   const messages = [
-    { role: 'system', content: `You are a browser automation agent. Use the provided tools to complete tasks step by step. Call done() when you have the final answer.
-
-Rules:
-- Ref IDs change after every action. Never reuse an old ref ID.
-- Elements marked [editable] or role=textbox are typeable.
-- After navigating to read information, call read(), then call done() with the answer.` },
+    { role: 'system', content: `You are a helpful browser automation and tool-using agent. Current date and time: ${now.toLocaleString()} (${now.toISOString()}).
+You can interact with the current webpage (click, type, read, navigate, scroll) AND invoke connected external tools (such as Notion tools for querying calendar events, searching notes, reading pages, updating databases).
+When invoking tools, call the tool functions with appropriate parameters. Once you have the requested information or the task is finished, return the final answer clearly or call done(result).` },
     { role: 'user', content: `TASK: ${task}\n\nCURRENT PAGE:\n${snippet}` }
   ];
 
@@ -478,14 +660,22 @@ Rules:
 
     let msg;
     try {
-      msg = await callAgentLLM(model, messages);
+      msg = await callAgentLLM(model, messages, dynamicTools);
     } catch (e) {
       step('error', `Model error: ${e.message}`);
       done('Agent stopped due to an error.');
       return;
     }
 
-    const toolCalls = msg?.tool_calls;
+    let toolCalls = msg?.tool_calls;
+
+    // Support models that output text <tool_call>... tags instead of structured tool_calls
+    if (!toolCalls?.length && msg?.content) {
+      const extracted = extractTextToolCalls(msg.content, mcpToolMap);
+      if (extracted.length) {
+        toolCalls = extracted;
+      }
+    }
 
     if (!toolCalls?.length) {
       const content = msg?.content?.trim() || '';
@@ -495,9 +685,25 @@ Rules:
       return;
     }
 
-    messages.push({ role: 'assistant', content: msg.content || '', tool_calls: toolCalls });
+    // Ensure every tool call has a non-empty string tool_call_id
+    const sanitizedToolCalls = toolCalls.map((tc, idx) => ({
+      id: tc.id && String(tc.id).trim() ? String(tc.id) : `call_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 8)}`,
+      type: tc.type || 'function',
+      function: {
+        name: tc.function?.name || '',
+        arguments: typeof tc.function?.arguments === 'string'
+          ? tc.function.arguments
+          : JSON.stringify(tc.function?.arguments || {})
+      }
+    }));
 
-    for (const tc of toolCalls) {
+    messages.push({
+      role: 'assistant',
+      content: msg.content || '',
+      tool_calls: sanitizedToolCalls
+    });
+
+    for (const tc of sanitizedToolCalls) {
       const name = tc.function.name;
       let args = tc.function.arguments;
       if (typeof args === 'string') {
@@ -506,25 +712,33 @@ Rules:
 
       if (name === 'done') { done(args.result); return; }
 
-      const desc = {
-        click:    `Click ${args.refId}`,
-        type:     `Type "${String(args.text || '').slice(0, 40)}" into ${args.refId}`,
-        key:      `Press ${args.key}`,
-        scroll:   `Scroll ${args.direction}`,
-        navigate: `Navigate to ${String(args.url || '').slice(0, 50)}`
-      }[name] || name;
-      step('action', desc);
-
       let toolResult = '';
+      let isMcp = false;
       try {
-        if (name === 'navigate') {
+        if (mcpToolMap[name]) {
+          isMcp = true;
+          const { server, originalName } = mcpToolMap[name];
+          step('action', `[MCP ${server.name}] ${originalName}(${JSON.stringify(args || {})})`);
+          const res = await MCPClient.callTool(server, originalName, args || {});
+          toolResult = typeof res === 'object' ? JSON.stringify(res, null, 2) : String(res);
+        } else if (name === 'navigate') {
+          step('action', `Navigate to ${String(args.url || '').slice(0, 50)}`);
           await chrome.tabs.update(tabId, { url: args.url });
           await waitLoad(tabId);
           toolResult = 'Navigated.';
         } else if (name === 'read') {
+          step('action', 'Read visible page content');
           const text = await extractTab(tabId);
           toolResult = text;
         } else {
+          const desc = {
+            click:    `Click ${args.refId}`,
+            type:     `Type "${String(args.text || '').slice(0, 40)}" into ${args.refId}`,
+            key:      `Press ${args.key}`,
+            scroll:   `Scroll ${args.direction}`
+          }[name] || name;
+          step('action', desc);
+
           const result = await chrome.tabs.sendMessage(tabId, { action: 'executeTool', tool: name, args });
           if (result?.success === false) {
             step('error', result.error);
@@ -539,9 +753,19 @@ Rules:
         toolResult = `Error: ${e.message}`;
       }
 
-      const newTree = await getTree(tabId);
-      const newSnippet = newTree.length > 3000 ? newTree.slice(0, 3000) + '\n…[truncated]' : newTree;
-      messages.push({ role: 'tool', content: `${toolResult}\n\nUpdated page:\n${newSnippet}` });
+      let toolMessageContent = toolResult;
+      if (!isMcp) {
+        const newTree = await getTree(tabId);
+        const newSnippet = newTree.length > 3000 ? newTree.slice(0, 3000) + '\n…[truncated]' : newTree;
+        toolMessageContent = `${toolResult}\n\nUpdated page:\n${newSnippet}`;
+      }
+
+      messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        name: name,
+        content: toolMessageContent
+      });
     }
 
     i++;

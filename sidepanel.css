@@ -726,18 +726,11 @@ body {
 }
 
 .model-section-badge {
-  font-size: 9.5px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--surface-2);
-  color: var(--text-2);
-  letter-spacing: 0.02em;
+  display: none !important;
 }
 
-.model-section-badge.cloud {
-  background: rgba(16, 163, 127, 0.12);
-  color: #10a37f;
+.model-provider-tag {
+  display: none !important;
 }
 
 .model-empty-hint {
@@ -921,6 +914,35 @@ body {
   background: var(--surface-3);
 }
 
+/* MCP Mention Pill */
+.mention-pill.mcp-pill {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.28);
+}
+
+.mention-pill.mcp-pill .pill-at {
+  color: #a78bfa;
+}
+
+.mention-pill.mcp-pill:hover {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.tab-item .mcp-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
 /* Agent Step Limit Prompt */
 .agent-step-prompt {
   background: var(--surface-2);
@@ -1066,6 +1088,101 @@ body {
 
 .dictate-btn:active {
   transform: scale(0.92);
+}
+
+/* ── Microphone Blocked Banner ────────────────────────────────── */
+.mic-blocked-banner {
+  background: var(--surface);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  animation: slideUpFade 0.18s ease;
+}
+
+.mic-blocked-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mic-blocked-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mic-blocked-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mic-blocked-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.mic-blocked-desc {
+  font-size: 10px;
+  color: var(--text-2);
+  line-height: 1.3;
+}
+
+.mic-blocked-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mic-unlock-btn {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.mic-unlock-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-0.5px);
+}
+
+.mic-dismiss-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.mic-dismiss-btn:hover {
+  color: var(--text);
 }
 
 .dictate-btn.recording {

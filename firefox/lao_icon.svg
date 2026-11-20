@@ -1,0 +1,8 @@
+<svg width="691" height="691" viewBox="0 0 691 691" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded square background -->
+  <rect width="691" height="691" rx="124" fill="#3b82f6"/>
+  <!-- Vertical stroke of L -->
+  <rect x="138" y="138" width="121" height="415" rx="42" fill="white"/>
+  <!-- Horizontal stroke of L -->
+  <rect x="138" y="432" width="415" height="121" rx="42" fill="white"/>
+</svg>

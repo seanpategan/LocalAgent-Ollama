@@ -27,7 +27,16 @@
       "run_at": "document_idle"
    } ],
    "content_security_policy": {
-      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:;"
+      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* http: https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:;"
+   },
+   "declarative_net_request": {
+      "rule_resources": [
+         {
+            "id": "ruleset_1",
+            "enabled": true,
+            "path": "rules.json"
+         }
+      ]
    },
    "description": "Local AI assistant powered by Ollama. Fully private, running on your machine.",
    "host_permissions": [ "\u003Call_urls>" ],
@@ -46,6 +55,6 @@
    "side_panel": {
       "default_path": "sidepanel.html"
    },
-   "permissions": [ "sidePanel", "storage", "scripting", "tabs" ],
+   "permissions": [ "sidePanel", "storage", "scripting", "tabs", "identity", "declarativeNetRequest" ],
    "version": "1.0.0"
 }
